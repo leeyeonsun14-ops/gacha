@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="theme-color" content="#1c1917"/>
+<title>GACHA</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#1c1917;font-family:"Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:#e7e5e4;min-height:100vh}
+input,button,select{font-family:inherit}
+.wrap{max-width:430px;margin:0 auto;min-height:100vh}
+.hd{background:#292524;border-bottom:1px solid #44403c;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.logo{font-weight:900;font-size:18px;color:#fbbf24}
+.tabs{display:flex;border-bottom:1px solid #44403c;overflow-x:auto}
+.tb{flex:1;padding:11px 4px;background:transparent;border:none;border-bottom:2px solid transparent;color:#78716c;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:55px}
+.tb.on{color:#fbbf24;border-bottom-color:#f59e0b}
+.pad{padding:16px}
+.card{background:#292524;border-radius:16px;padding:18px 16px;border:1px solid #44403c;margin-bottom:12px}
+.inp{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #44403c;background:#1c1917;color:#e7e5e4;font-size:15px;outline:none}
+.inp:focus{border-color:#f59e0b}
+.btn{width:100%;padding:13px;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer}
+.bg{background:#f59e0b;color:#1c1917}
+.bg:disabled{background:#44403c;color:#78716c;cursor:not-allowed}
+.bd{background:#78350f;color:#fbbf24}
+.badge{background:#1c1917;border:1px solid #44403c;border-radius:10px;padding:6px 12px;color:#fbbf24;font-weight:800;font-size:14px}
+.mrow{background:#1c1917;border-radius:12px;padding:13px 16px;margin-bottom:8px;border:1px solid #44403c;display:flex;align-items:center;justify-content:space-between}
+.dbtn{padding:6px 12px;background:transparent;border:1px solid #ef444466;color:#ef4444;border-radius:8px;font-size:12px;cursor:pointer;font-weight:700}
+.lrow{background:#1c1917;border-radius:12px;padding:12px 16px;margin-bottom:8px;border:1px solid #44403c;display:flex;align-items:center;gap:12px}
+.empty{text-align:center;padding:60px 20px;color:#78716c}
+.toast{position:fixed;bottom:36px;left:50%;transform:translateX(-50%);background:#292524;border:1px solid #4ade80;color:#4ade80;padding:11px 24px;border-radius:24px;font-weight:800;font-size:14px;z-index:999;white-space:nowrap}
+.cdrop{position:fixed;top:15%;left:50%;transform:translateX(-50%);font-size:32px;z-index:999;pointer-events:none;animation:fall .85s ease-in forwards}
+@keyframes fall{0%{top:15%;opacity:1}100%{top:65%;opacity:0}}
+.pburst{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;border:3px solid rgba(255,255,255,.3);animation:burstIn .5s ease forwards}
+@keyframes burstIn{from{transform:translate(-50%,-50%) scale(.2);opacity:0}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
+select.inp{appearance:none;cursor:pointer}
+.sinp{padding:9px 11px;border-radius:10px;border:1px solid #44403c;background:#1c1917;color:#e7e5e4;font-size:14px;outline:none;width:100%}
+.qb{flex:1;padding:9px 4px;border:1px solid #44403c;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;background:transparent;color:#78716c}
+.qb.on{background:rgba(245,158,11,.15);border-color:#f59e0b;color:#fbbf24}
+.pedit{background:#1c1917;border-radius:12px;padding:14px;margin-bottom:10px;border:1px solid #44403c}
+</style>
+</head>
+<body>
+<div class="wrap" id="root"></div>
+<script>
+var ADMIN_PW = "admin1234";
+var FB = "https://gacha-31-default-rtdb.firebaseio.com";
+var DP = [
+  {id:"연차", emoji:"🏖️", color:"#f59e0b", rare:30},
+  {id:"투피드", emoji:"🍔", color:"#34d399", rare:40},
+  {id:"출근확인증", emoji:"📋", color:"#60a5fa", rare:30}
+];
+
+// Firebase - 완전 비동기, 절대 블로킹 없음
+function fget(p) {
+return new Promise(function(resolve) {
+var done = false;
+var timer = setTimeout(function() {
+if (!done) { done = true; resolve(null); }
+}, 4000);
+fetch(FB + p + “.json”)
+.then(function(r) { return r.json(); })
+.then(function(d) {
+if (!done) { done = true; clearTimeout(timer); resolve(d); }
+})
+.catch(function() {
+if (!done) { done = true; clearTimeout(timer); resolve(null); }
+});
+});
+}
+function fset(p, v) {
+fetch(FB + p + “.json”, {method:“PUT”, headers:{“Content-Type”:“application/json”}, body:JSON.stringify(v)}).catch(function(){});
+}
+function fpatch(p, v) {
+fetch(FB + p + “.json”, {method:“PATCH”, headers:{“Content-Type”:“application/json”}, body:JSON.stringify(v)}).catch(function(){});
+}
+
+var S = {
+role:null, nick:””,
+members:[], users:{}, log:[], prizes:DP, cost:1,
+adminTab:“members”, mTab:“machine”,
+spinning:false, cdrop:false, prize:null, showPrize:false,
+giveTarget:””, giveAmt:1, newMember:””,
+ni:””, pi:””, loginErr:””, pwErr:””,
+toast:””, editPrizes:null
+};
+
+var tT = null;
+function toast(msg) {
+S.toast = msg; render();
+if (tT) clearTimeout(tT);
+tT = setTimeout(function() { S.toast = “”; render(); }, 2500);
+}
+function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
+function loadAll() {
+return Promise.all([
+fget(”/gacha/members”), fget(”/gacha/users”),
+fget(”/gacha/log”), fget(”/gacha/prizes”), fget(”/gacha/cost”)
+]).then(function(res) {
+S.members = res[0] ? Object.values(res[0]) : [];
+S.users = res[1] || {};
+S.log = res[2] ? Object.values(res[2]).reverse() : [];
+S.prizes = res[3] || DP;
+S.cost = res[4] || 1;
+}).catch(function() {});
+}
+
+function randPrize() {
+var t = S.prizes.reduce(function(s, p) { return s + Number(p.rare); }, 0);
+var r = Math.random() * t;
+for (var i = 0; i < S.prizes.length; i++) {
+r -= Number(S.prizes[i].rare);
+if (r <= 0) return S.prizes[i];
+}
+return S.prizes[0];
+}
+
+function tryLogin() {
+var name = S.ni.trim();
+if (!name) return;
+S.loginErr = “”;
+// 로그인 화면 유지하면서 백그라운드로 확인
+fget(”/gacha/members”).then(function(m) {
+var list = m ? Object.values(m) : [];
+if (list.length > 0 && list.indexOf(name) < 0) {
+S.loginErr = “등록된 멤버가 아니에요 🚫”;
+render(); return;
+}
+return fget(”/gacha/users/” + name).then(function(ex) {
+if (!ex) fset(”/gacha/users/” + name, {stocks:0, history:[]});
+}).then(loadAll).then(function() {
+S.nick = name; S.role = “participant”; render();
+});
+}).catch(function() {
+S.nick = name; S.role = “participant”; render();
+});
+}
+
+function tryAdmin() {
+if (S.pi === ADMIN_PW) {
+loadAll().then(function() {
+S.editPrizes = JSON.parse(JSON.stringify(S.prizes));
+S.role = “admin”; render();
+}).catch(function() {
+S.editPrizes = JSON.parse(JSON.stringify(S.prizes));
+S.role = “admin”; render();
+});
+} else {
+S.pwErr = “비밀번호가 틀렸어요”; render();
+}
+}
+
+function addMember() {
+var name = S.newMember.trim();
+if (!name) return;
+if (S.members.indexOf(name) >= 0) { toast(“이미 있는 멤버예요”); return; }
+S.members.push(name);
+fset(”/gacha/members”, S.members);
+if (!S.users[name]) {
+S.users[name] = {stocks:0, history:[]};
+fset(”/gacha/users/” + name, {stocks:0, history:[]});
+}
+S.newMember = “”; toast(“✅ “ + name + “ 추가됨!”);
+}
+
+function removeMember(name) {
+S.members = S.members.filter(function(m) { return m !== name; });
+fset(”/gacha/members”, S.members); render();
+}
+
+function giveStocks() {
+var t = S.giveTarget, amt = Number(S.giveAmt);
+if (!t) return;
+if (!S.users[t]) S.users[t] = {stocks:0, history:[]};
+S.users[t].stocks = (S.users[t].stocks || 0) + amt;
+fset(”/gacha/users/” + t + “/stocks”, S.users[t].stocks);
+toast(“📈 “ + t + “에게 “ + amt + “주 지급!”);
+}
+
+function savePrizes() {
+for (var i = 0; i < S.editPrizes.length; i++) {
+if (!S.editPrizes[i].id.trim() || !S.editPrizes[i].emoji.trim() || Number(S.editPrizes[i].rare) < 1) {
+toast(“경품 정보를 확인해주세요”); return;
+}
+}
+S.prizes = JSON.parse(JSON.stringify(S.editPrizes));
+fset(”/gacha/prizes”, S.prizes);
+toast(“✅ 경품 저장 완료!”);
+}
+
+function saveCost() {
+fset(”/gacha/cost”, S.cost);
+toast(“✅ 1판 = “ + S.cost + “주 저장!”);
+}
+
+function addPrize() {
+S.editPrizes.push({id:“새 경품”, emoji:“🎁”, color:”#a78bfa”, rare:20}); render();
+}
+
+function removePrize(i) {
+if (S.editPrizes.length <= 1) { toast(“최소 1개 필요”); return; }
+S.editPrizes.splice(i, 1); render();
+}
+
+function doSpin() {
+if (S.spinning || S.cdrop) return;
+var cost = S.cost || 1;
+var st = S.users[S.nick] ? (S.users[S.nick].stocks || 0) : 0;
+if (st < cost) return;
+S.cdrop = true; render();
+sleep(900).then(function() {
+S.cdrop = false; S.spinning = true; S.showPrize = false; S.prize = null; render();
+return sleep(1800);
+}).then(function() {
+var won = randPrize();
+var now = new Date().toLocaleString(“ko-KR”);
+var entry = {prize:won.id, emoji:won.emoji, date:now};
+var ns = st - cost;
+var nh = [entry].concat(S.users[S.nick].history || []);
+fpatch(”/gacha/users/” + S.nick, {stocks:ns, history:nh});
+fset(”/gacha/log/” + Date.now(), {nick:S.nick, prize:won.id, emoji:won.emoji, date:now});
+S.spinning = false; S.prize = won; S.showPrize = true;
+S.users[S.nick] = {stocks:ns, history:nh};
+render();
+return sleep(3000);
+}).then(function() {
+S.showPrize = false; render();
+});
+}
+
+function logout() {
+S.role = null; S.nick = “”; S.ni = “”; S.pi = “”;
+S.loginErr = “”; S.pwErr = “”;
+S.spinning = false; S.cdrop = false; S.prize = null; S.showPrize = false;
+render();
+}
+
+function g(id, ev, fn) {
+var e = document.getElementById(id);
+if (e) e.addEventListener(ev, fn);
+}
+
+function machineSVG(st, spinning, prize, showPrize) {
+var bc = [”#f59e0b”,”#f472b6”,”#a78bfa”,”#60a5fa”,”#34d399”,”#fb923c”,”#c084fc”];
+var bp = [{cx:95,cy:82,r:14},{cx:145,cy:72,r:12},{cx:122,cy:130,r:15},{cx:76,cy:118,r:11},{cx:150,cy:116,r:13},{cx:108,cy:62,r:9},{cx:158,cy:96,r:9}];
+var balls = “”;
+for (var i = 0; i < bp.length; i++) {
+var b = bp[i];
+if (spinning) {
+balls += ‘<circle cx="'+b.cx+'" cy="'+b.cy+'" r="'+b.r+'" fill="'+bc[i]+'" opacity=".9"><animateTransform attributeName="transform" type="rotate" from="'+(i*50)+' 118 100" to="'+(360+i*50)+' 118 100" dur="'+(0.3+i*0.05)+'s" repeatCount="indefinite"/></circle>’;
+} else {
+balls += ‘<circle cx="'+b.cx+'" cy="'+b.cy+'" r="'+b.r+'" fill="'+bc[i]+'" opacity=".85"/>’;
+}
+}
+var burst = showPrize && prize
+? ‘<div class="pburst" style="width:120px;height:120px;background:radial-gradient(circle,'+prize.color+'cc,'+prize.color+'44);box-shadow:0 0 40px '+prize.color+'88"><div style="font-size:38px">’+prize.emoji+’</div><div style="color:#fff;font-weight:900;font-size:12px;margin-top:4px">’+prize.id+’</div></div>’
+: “”;
+return ‘<div style="position:relative;width:250px;margin:0 auto">’
++’<svg viewBox="0 0 240 280" width="240" height="260">’
++’<defs>’
++’<radialGradient id="bg1" cx="38%" cy="32%"><stop offset="0%" stop-color="#292524"/><stop offset="100%" stop-color="#1c1917"/></radialGradient>’
++’<radialGradient id="sh1" cx="28%" cy="22%"><stop offset="0%" stop-color="white" stop-opacity=".15"/><stop offset="50%" stop-color="white" stop-opacity="0"/></radialGradient>’
++’<linearGradient id="rim1" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f59e0b"/><stop offset="50%" stop-color="#f472b6"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient>’
++’<linearGradient id="base1" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#44403c"/><stop offset="100%" stop-color="#292524"/></linearGradient>’
++’</defs>’
++’<ellipse cx="118" cy="268" rx="72" ry="10" fill="#000" opacity=".4"/>’
++’<rect x="36" y="200" width="148" height="65" rx="18" fill="url(#base1)"/>’
++’<rect x="36" y="200" width="148" height="65" rx="18" fill="none" stroke="url(#rim1)" stroke-width="1.5" opacity=".5"/>’
++’<rect x="86" y="152" width="60" height="56" rx="10" fill="#292524"/>’
++’<rect x="86" y="152" width="60" height="56" rx="10" fill="none" stroke="#44403c" stroke-width="1"/>’
++’<ellipse cx="118" cy="232" rx="42" ry="15" fill="#1c1917" opacity=".9"/>’
++’<ellipse cx="118" cy="230" rx="36" ry="11" fill="#292524"/>’
++’<circle cx="118" cy="98" r="82" fill="none" stroke="url(#rim1)" stroke-width="3" opacity=".4"/>’
++’<circle cx="118" cy="98" r="80" fill="url(#bg1)"/>’
++balls
++’<circle cx="118" cy="98" r="80" fill="url(#sh1)"/>’
++’<circle cx="118" cy="98" r="80" fill="none" stroke="url(#rim1)" stroke-width="2" opacity=".8"/>’
++’<rect x="184" y="160" width="12" height="46" rx="6" fill="#44403c"/>’
++’<circle cx="190" cy="209" r="12" fill="#f59e0b"/>’
++’<circle cx="190" cy="209" r="8" fill="#fbbf24"/>’
++’<circle cx="187" cy="206" r="3" fill="white" opacity=".5"/>’
++’<rect x="50" y="216" width="72" height="26" rx="9" fill="#1c1917"/>’
++’<rect x="50" y="216" width="72" height="26" rx="9" fill="none" stroke="#f59e0b" stroke-width=".8" opacity=".6"/>’
++’<text x="86" y="234" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="900" font-family="monospace">’+String(st).padStart(2,“0”)+’ \uC8FC</text>’
++’</svg>’
++burst
++’</div>’;
+}
+
+function render() {
+var root = document.getElementById(“root”);
+if (!root) return;
+var tH = S.toast ? ‘<div class="toast">’+S.toast+’</div>’ : “”;
+var cH = S.cdrop ? ‘<div class="cdrop">📈</div>’ : “”;
+var html = “”;
+
+// 로그인
+if (!S.role) {
+html = tH
++’<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">’
++’<div style="width:100%;max-width:360px">’
++’<div style="text-align:center;margin-bottom:32px">’
++’<div style="font-size:56px;margin-bottom:10px">🎰</div>’
++’<div style="font-weight:900;font-size:26px;color:#fbbf24">GACHA</div>’
++’<div style="color:#78716c;font-size:13px;margin-top:6px">행운을 뽑아보세요</div>’
++’</div>’
++’<div class="card" style="margin-bottom:14px">’
++’<div style="font-weight:800;font-size:15px;margin-bottom:14px;color:#fbbf24">👤 참여자</div>’
++’<input class="inp" id="ni" placeholder="닉네임 입력" value="'+S.ni+'"/>’
++(S.loginErr ? ‘<div style="color:#ef4444;font-size:12px;margin-top:8px;font-weight:700">’+S.loginErr+’</div>’ : ‘’)
++’<button class=“btn bg” id=“lb” style=“margin-top:12px” ‘+(S.ni.trim()?’’:‘disabled’)+’>입장하기 →</button>’
++’</div>’
++’<div class="card">’
++’<div style="font-weight:800;font-size:15px;margin-bottom:14px;color:#a78bfa">🔐 관리자</div>’
++’<input class="inp" id="pi" type="password" placeholder="관리자 비밀번호" value="'+S.pi+'" style="'+(S.pwErr?'border-color:#ef4444':'')+'">’
++(S.pwErr ? ‘<div style="color:#ef4444;font-size:12px;margin-top:8px;font-weight:700">’+S.pwErr+’</div>’ : ‘’)
++’<button class="btn bd" id="ab" style="margin-top:12px">관리자 입장</button>’
++’</div>’
++’</div></div>’;
+root.innerHTML = html;
+g(“ni”,“input”,function(e){S.ni=e.target.value;S.loginErr=””;var b=document.getElementById(“lb”);if(b)b.disabled=!S.ni.trim();});
+g(“ni”,“keydown”,function(e){if(e.key===“Enter”)tryLogin();});
+g(“pi”,“input”,function(e){S.pi=e.target.value;S.pwErr=””;});
+g(“pi”,“keydown”,function(e){if(e.key===“Enter”)tryAdmin();});
+g(“lb”,“click”,tryLogin);
+g(“ab”,“click”,tryAdmin);
+return;
+}
+
+// 관리자
+if (S.role === “admin”) {
+var tabs = [[“members”,“👥 멤버”],[“give”,“📈 지급”],[“prizes”,“🎁 경품”],[“settings”,“⚙️ 설정”],[“users”,“📊 현황”],[“log”,“📜 기록”]];
+var tc = “”;
+var t = S.adminTab;
+
+```
+if (t === "members") {
+  var rows = "";
+  for (var i = 0; i < S.members.length; i++) {
+    var m = S.members[i];
+    var st2 = S.users[m] ? (S.users[m].stocks||0) : 0;
+    var ht = S.users[m] ? (S.users[m].history||[]).length : 0;
+    rows += '<div class="mrow"><div><div style="font-weight:800">'+m+'</div><div style="font-size:12px;color:#78716c;margin-top:2px">📈'+st2+'주 · '+ht+'회</div></div><button class="dbtn" onclick="removeMember(\''+m+'\')">삭제</button></div>';
+  }
+  tc = '<div class="card"><div style="font-weight:800;color:#fbbf24;margin-bottom:12px">멤버 등록</div>'
+    +'<div style="display:flex;gap:8px"><input class="inp" id="nmi" placeholder="닉네임" value="'+S.newMember+'" style="flex:1"/>'
+    +'<button class="btn bg" id="amb" style="width:auto;padding:12px 18px" '+(S.newMember.trim()?'':'disabled')+'>추가</button></div></div>'
+    +'<div style="color:#78716c;font-size:13px;margin-bottom:10px;font-weight:700">등록된 멤버 '+S.members.length+'명</div>'
+    +(S.members.length===0?'<div class="empty">멤버를 먼저 등록해주세요</div>':rows);
+}
+
+if (t === "give") {
+  var opts = '<option value="">-- 선택 --</option>';
+  for (var i = 0; i < S.members.length; i++) {
+    var m = S.members[i];
+    var st2 = S.users[m] ? (S.users[m].stocks||0) : 0;
+    opts += '<option value="'+m+'" '+(S.giveTarget===m?'selected':'')+'>'+m+' ('+st2+'주)</option>';
+  }
+  var qb = "";
+  [1,3,5,10].forEach(function(n){qb+='<button class="qb '+(S.giveAmt===n?'on':'')+'" onclick="S.giveAmt='+n+';render()">'+n+'</button>';});
+  tc = S.members.length===0?'<div class="empty">먼저 멤버를 등록해주세요</div>'
+    :'<div class="card">'
+    +'<div style="font-weight:800;color:#fbbf24;margin-bottom:14px">주식 지급</div>'
+    +'<div style="margin-bottom:12px"><label style="font-size:12px;color:#78716c;display:block;margin-bottom:6px;font-weight:700">멤버 선택</label>'
+    +'<select class="inp" id="gts">'+opts+'</select></div>'
+    +'<div style="margin-bottom:16px"><label style="font-size:12px;color:#78716c;display:block;margin-bottom:8px;font-weight:700">주식 수: <span style="color:#fbbf24;font-size:16px">'+S.giveAmt+'주</span></label>'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px">'+qb+'</div>'
+    +'<input type="range" id="gr" min="0" max="100" value="'+S.giveAmt+'" style="width:100%;accent-color:#f59e0b"/></div>'
+    +'<button class="btn bg" id="gcb" '+(S.giveTarget?'':'disabled')+'>📈 '+(S.giveTarget?S.giveTarget+'에게 '+S.giveAmt+'주 지급':'멤버를 선택해주세요')+'</button></div>';
+}
+
+if (t === "prizes") {
+  var ep = S.editPrizes || S.prizes;
+  var total = ep.reduce(function(s,p){return s+Number(p.rare);},0);
+  var rows = "";
+  for (var i = 0; i < ep.length; i++) {
+    var p = ep[i];
+    rows += '<div class="pedit">'
+      +'<div style="display:flex;justify-content:space-between;margin-bottom:10px"><div style="font-weight:800;color:'+(p.color||"#fbbf24")+'">경품 '+(i+1)+'</div><button class="dbtn" onclick="removePrize('+i+')">삭제</button></div>'
+      +'<div style="display:grid;grid-template-columns:65px 1fr;gap:8px;margin-bottom:8px">'
+      +'<div><label style="font-size:11px;color:#78716c;display:block;margin-bottom:4px;font-weight:700">이모지</label><input class="sinp" data-i="'+i+'" data-f="emoji" value="'+p.emoji+'" style="text-align:center;font-size:20px"/></div>'
+      +'<div><label style="font-size:11px;color:#78716c;display:block;margin-bottom:4px;font-weight:700">이름</label><input class="sinp" data-i="'+i+'" data-f="id" value="'+p.id+'"/></div>'
+      +'</div>'
+      +'<label style="font-size:11px;color:#78716c;display:block;margin-bottom:6px;font-weight:700" id="rl'+i+'">확률: <span style="color:#fbbf24">'+p.rare+'</span> (약 '+Math.round(Number(p.rare)/total*100)+'%)</label>'
+      +'<input type="range" data-i="'+i+'" data-f="rare" min="1" max="100" value="'+p.rare+'" style="width:100%;accent-color:#f59e0b"/>'
+      +'</div>';
+  }
+  tc = '<div class="card" style="margin-bottom:10px"><div style="font-weight:800;color:#fbbf24;margin-bottom:4px">🎁 경품 설정</div><div style="font-size:13px;color:#78716c">이름·이모지·확률 수정 가능</div></div>'
+    +rows
+    +'<button class="btn" onclick="addPrize()" style="background:#292524;border:1px solid #44403c;color:#78716c;margin-bottom:12px">+ 경품 추가</button>'
+    +'<button class="btn bg" onclick="savePrizes()">💾 저장하기</button>';
+}
+
+if (t === "settings") {
+  var qb = "";
+  [1,2,3,5].forEach(function(n){qb+='<button class="qb '+((S.cost||1)===n?'on':'')+'" onclick="S.cost='+n+';render()">'+n+'주</button>';});
+  tc = '<div class="card">'
+    +'<div style="font-weight:800;color:#fbbf24;margin-bottom:16px">⚙️ 게임 설정</div>'
+    +'<label style="font-size:13px;color:#78716c;display:block;margin-bottom:10px;font-weight:700">1판당 필요 주식: <span style="color:#fbbf24;font-size:18px">'+(S.cost||1)+'주</span></label>'
+    +'<div style="display:flex;gap:8px;margin-bottom:12px">'+qb+'</div>'
+    +'<input type="range" id="cr" min="1" max="10" value="'+(S.cost||1)+'" style="width:100%;accent-color:#f59e0b"/>'
+    +'<button class="btn bg" onclick="saveCost()" style="margin-top:16px">💾 저장하기</button>'
+    +'</div>';
+}
+
+if (t === "users") {
+  var rows = S.members.length===0?'<div class="empty">멤버 없음</div>':"";
+  for (var i = 0; i < S.members.length; i++) {
+    var n = S.members[i];
+    var info = S.users[n] || {stocks:0,history:[]};
+    rows += '<div class="mrow"><div><div style="font-weight:800">'+n+'</div><div style="font-size:12px;color:#78716c">'+(info.history||[]).length+'회 당첨</div></div><div class="badge">📈 '+(info.stocks||0)+'주</div></div>';
+  }
+  tc = rows;
+}
+
+if (t === "log") {
+  var rows = S.log.length===0?'<div class="empty">기록 없음</div>':"";
+  for (var i = 0; i < Math.min(S.log.length,80); i++) {
+    var e = S.log[i];
+    var pc = null;
+    for (var j = 0; j < S.prizes.length; j++){if(S.prizes[j].id===e.prize){pc=S.prizes[j];break;}}
+    rows += '<div class="lrow"><div style="font-size:24px">'+e.emoji+'</div><div style="flex:1"><div style="font-weight:800">'+e.nick+' <span style="color:'+(pc?pc.color:'#fbbf24')+'">'+e.prize+'</span></div><div style="font-size:11px;color:#78716c;margin-top:2px">'+e.date+'</div></div></div>';
+  }
+  tc = rows;
+}
+
+var tabsHtml = "";
+for (var i = 0; i < tabs.length; i++) {
+  tabsHtml += '<button class="tb '+(S.adminTab===tabs[i][0]?'on':'')+'" onclick="S.adminTab=\''+tabs[i][0]+'\';render()">'+tabs[i][1]+'</button>';
+}
+
+html = tH
+  +'<div class="hd"><div class="logo">🔐 관리자</div>'
+  +'<div style="display:flex;gap:8px">'
+  +'<button class="btn bg" onclick="loadAll().then(function(){S.editPrizes=JSON.parse(JSON.stringify(S.prizes));render();})" style="width:auto;padding:8px 14px;font-size:13px">🔄</button>'
+  +'<button class="btn" onclick="logout()" style="width:auto;padding:8px 14px;font-size:13px;background:#292524;border:1px solid #44403c;color:#78716c">나가기</button>'
+  +'</div></div>'
+  +'<div class="tabs">'+tabsHtml+'</div>'
+  +'<div class="pad">'+tc+'</div>';
+
+root.innerHTML = html;
+g("nmi","input",function(e){S.newMember=e.target.value;var b=document.getElementById("amb");if(b)b.disabled=!S.newMember.trim();});
+g("nmi","keydown",function(e){if(e.key==="Enter")addMember();});
+g("amb","click",addMember);
+g("gts","change",function(e){S.giveTarget=e.target.value;render();});
+g("gr","input",function(e){S.giveAmt=Number(e.target.value);render();});
+g("gcb","click",giveStocks);
+g("cr","input",function(e){S.cost=Number(e.target.value);render();});
+document.querySelectorAll("[data-i]").forEach(function(el){
+  el.addEventListener("input",function(e){
+    var idx=Number(e.target.dataset.i),f=e.target.dataset.f;
+    if(!S.editPrizes)S.editPrizes=JSON.parse(JSON.stringify(S.prizes));
+    S.editPrizes[idx][f]=f==="rare"?Number(e.target.value):e.target.value;
+    if(f==="rare"){
+      var tot=S.editPrizes.reduce(function(s,p){return s+Number(p.rare);},0);
+      var lb=document.getElementById("rl"+idx);
+      if(lb)lb.innerHTML='확률: <span style="color:#fbbf24">'+S.editPrizes[idx].rare+'</span> (약 '+Math.round(Number(S.editPrizes[idx].rare)/tot*100)+'%)';
+    }
+  });
+});
+return;
+```
+
+}
+
+// 참여자
+var st = S.users[S.nick] ? (S.users[S.nick].stocks||0) : 0;
+var cost = S.cost || 1;
+var mh = S.users[S.nick] ? (S.users[S.nick].history||[]) : [];
+var can = st >= cost && !S.spinning && !S.cdrop;
+var sbStyle = can
+? “background:#f59e0b;color:#1c1917;box-shadow:0 0 20px rgba(245,158,11,.4)”
+: “background:#292524;color:#78716c;cursor:not-allowed;border:1px solid #44403c”;
+var sbTxt = S.spinning?“🎲 뽑는 중…”:S.cdrop?“📈 투자 중…”:st<cost?“주식이 부족해요 (”+cost+“주 필요)”:“📈 주식 1주 투자하기”;
+
+var mc = “”;
+if (S.mTab === “machine”) {
+var pd = S.showPrize && S.prize
+? ‘<div style="margin-top:16px;text-align:center"><div style="font-size:28px;font-weight:900;color:'+S.prize.color+'">’+S.prize.emoji+’ ‘+S.prize.id+’ 당첨!</div><div style="color:#78716c;font-size:14px;margin-top:6px;font-weight:700">축하해요 🎉</div></div>’
+: “”;
+var pc = “”;
+for (var i = 0; i < S.prizes.length; i++) {
+var p = S.prizes[i];
+pc += ‘<div style="flex:1;background:#292524;border-radius:14px;padding:12px 6px;text-align:center;border:1px solid '+p.color+'33"><div style="font-size:22px">’+p.emoji+’</div><div style="font-size:11px;font-weight:800;color:'+p.color+';margin-top:4px">’+p.id+’</div></div>’;
+}
+mc = ‘<div style="padding:20px 16px;display:flex;flex-direction:column;align-items:center">’
++’<div style="color:#78716c;font-size:13px;margin-bottom:16px;font-weight:700">👤 ‘+S.nick+’  ·  보유 <span style="color:#fbbf24;font-size:15px;font-weight:900">’+st+‘주</span><span style="font-size:12px;color:#78716c"> (1판=’+cost+‘주)</span></div>’
++machineSVG(st,S.spinning,S.prize,S.showPrize)
++pd
++’<div style="display:flex;gap:10px;margin-top:18px;width:100%">’+pc+’</div>’
++’<button id=“spb” style=“width:100%;padding:18px;border:none;border-radius:18px;font-size:17px;font-weight:900;margin-top:16px;’+sbStyle+’” ‘+(can?’’:‘disabled’)+’>’+sbTxt+’</button>’
++(st<cost?’<div style="color:#78716c;font-size:12px;margin-top:10px;font-weight:700">관리자에게 주식을 받아주세요</div>’:’’)
++’</div>’;
+} else {
+var rows = mh.length===0
+?’<div class="empty"><div style="font-size:40px;margin-bottom:12px">🎰</div><div style="font-weight:700">뽑기 기록이 없어요</div></div>’
+:””;
+for (var i = 0; i < mh.length; i++) {
+var h = mh[i];
+var pc2 = null;
+for (var j = 0; j < S.prizes.length; j++){if(S.prizes[j].id===h.prize){pc2=S.prizes[j];break;}}
+rows += ‘<div class="lrow" style="border:1px solid '+(pc2?pc2.color+'33':'#44403c')+'"><div style="font-size:30px">’+h.emoji+’</div><div style="flex:1"><div style="font-weight:900;font-size:16px;color:'+(pc2?pc2.color:'#fbbf24')+'">’+h.prize+’</div><div style="font-size:12px;color:#78716c;margin-top:2px">’+h.date+’</div></div><div style="color:#78716c;font-size:13px;font-weight:700">#’+(mh.length-i)+’</div></div>’;
+}
+mc = ‘<div class="pad">’+rows+’</div>’;
+}
+
+html = cH+tH
++’<div class="hd"><div class="logo">🎰 GACHA</div>’
++’<div style="display:flex;align-items:center;gap:8px">’
++’<div class="badge">📈 ‘+st+‘주</div>’
++’<button class="btn" onclick="loadAll().then(render)" style="width:auto;padding:8px 10px;background:#292524;border:1px solid #44403c;color:#e7e5e4;font-size:14px">🔄</button>’
++’<button class="btn" onclick="logout()" style="width:auto;padding:8px 12px;background:#292524;border:1px solid #44403c;color:#78716c;font-size:12px">나가기</button>’
++’</div></div>’
++’<div class="tabs">’
++’<button class=“tb ‘+(S.mTab===“machine”?“on”:””)+’” onclick=“S.mTab='machine';render()”>🎰 기계</button>’
++’<button class=“tb ‘+(S.mTab===“history”?“on”:””)+’” onclick=“S.mTab='history';render()”>📜 내 기록</button>’
++’</div>’
++mc;
+
+root.innerHTML = html;
+g(“spb”,“click”,doSpin);
+}
+
+document.addEventListener(“DOMContentLoaded”, function() { render(); });
+</script>
+
+</body>
+</html>
